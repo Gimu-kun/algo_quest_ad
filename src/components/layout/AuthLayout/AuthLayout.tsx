@@ -1,5 +1,4 @@
-import { Flex, Space } from 'antd'
-import React from 'react'
+import { Flex } from 'antd'
 import { Outlet } from 'react-router-dom'
 
 export default function AuthLayout() {

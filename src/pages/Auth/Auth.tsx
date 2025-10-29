@@ -3,13 +3,20 @@ import { Form, Input, Button, Checkbox, message } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import Cookies from 'js-cookie';
+import { useNavigate } from 'react-router-dom';
 
 interface LoginResponse {
   user: any; 
   token: string;
 }
 
+
+
 const Auth = () => {
+
+  const navigate = useNavigate();
+
+  
   const onFinish = async (values: any) => {
     const payload = {
       username: values.username,
@@ -25,8 +32,8 @@ const Auth = () => {
       const { token, user } = response.data;
       Cookies.set('authToken', token, { expires: 7, secure: true, sameSite: 'Strict' });
       localStorage.setItem('currentUser', JSON.stringify(user));
-      console.log("Login Successful:", user);
-      message.success('Đăng nhập thành công! Đang chuyển hướng...');
+      message.success('Đăng nhập thành công!');
+      navigate('/');
     } catch (error) {
       let errorMessage = 'Đã xảy ra lỗi không xác định.';
 

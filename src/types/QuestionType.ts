@@ -1,19 +1,25 @@
 type BloomLevel = 'remember' | 'understand' | 'apply' | 'analyze' | 'evaluate' | 'create';
-type QuestionType = 'multiple_choice' | 'fill_in_blank' | 'true_false' | 'reorder';
 
-
+type QuestionType = 
+    'multiple_choice' | 
+    'fill_in_blank' | 
+    'true_false' | 
+    'reorder' | 
+    'matching' |
+    'numeric' |
+    'sequence' |
+    'programming';
 
 interface Answer {
     answerId?: number;
     answerText: string;
     correct: boolean;
-    answerMeta?: string | null;
+    answerMeta?: string | null; 
 }
 
 interface Quest {
     questId: number;
     questName: string;
-    // ... các trường khác của Quest nếu cần
 }
 
 interface Question {
@@ -22,8 +28,14 @@ interface Question {
     bloomLevel: BloomLevel;
     questionType: QuestionType;
     correctXpReward: number;
-    quest: Quest; // Đảm bảo có Quest object để hiển thị tên Quest
+    quest: Quest;
     answers: Answer[];
+    
+    partialCredit?: number | null | undefined;
+    synonyms?: string | null | undefined;
+    codeTemplate?: string | null | undefined;
+    testCases?: string | null | undefined;
+    testResults?: string | null | undefined;
 }
 
 // DTO cho Form (Frontend)
@@ -33,6 +45,12 @@ interface QuestionFormValues {
     bloomLevel: BloomLevel;
     questionType: QuestionType;
     correctXpReward: number;
+    partialCredit?: number; 
+    synonyms?: string;
+    codeTemplate?: string; 
+    testCases?: string; 
+    testResults?: string; 
+
     answers: { 
         text: string; 
         isCorrect: boolean;

@@ -6,6 +6,10 @@ import Dashboard from "../pages/Dashboard/Dashboard";
 import TopicManager from "../pages/Topic/TopicManager";
 import QuestManager from "../pages/Quest/QuestManager";
 import QuestionManager from "../pages/Question/QuestionManager";
+import UserManager from "../pages/User/UserManager";
+import UserProgressDashboard from "../pages/UserProgress/UserProgress";
+import Battle from "../pages/Battle/Battle";
+import Ratings from "../pages/Rating/Ratings";
 
 const router = createBrowserRouter([
     {
@@ -19,11 +23,11 @@ const router = createBrowserRouter([
       ],
     },
     {
-      path: "/",
+      path: "",
       element: <MainLayout />,
       children: [
         {
-          path: "",
+          path: "/admin/dashboard",
           element: <Dashboard />,
         },
         {
@@ -37,6 +41,22 @@ const router = createBrowserRouter([
         {
           path: "/admin/questions",
           element: <QuestionManager />,
+        },
+        {
+          path: "/admin/users",
+          element: <UserManager />,
+        },
+        {
+          path: "/admin/progress",
+          element: <UserProgressDashboard />,
+        },
+        {
+          path: "/admin/battles",
+          element: <Battle />,
+        },
+        {
+          path: "/admin/ratings",
+          element: <Ratings />,
         }
       ],
     }

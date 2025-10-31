@@ -1,0 +1,11 @@
+.ant-table-measure-row {
+    height: 0 !important; /* Đảm bảo không chiếm không gian chiều cao */
+    visibility: collapse !important; /* Ẩn hàng khỏi bố cục */
+    border: none !important; /* Loại bỏ viền nếu có */
+}
+
+.ant-table-measure-row td {
+    padding: 0 !important;
+    border: none !important;
+    height: 0 !important;
+}

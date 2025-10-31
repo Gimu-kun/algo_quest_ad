@@ -17,11 +17,27 @@ import {
     Row,
     Col,
     Divider,
+    Tooltip,
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, QuestionCircleOutlined, FireOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, QuestionCircleOutlined, FireOutlined, CheckCircleOutlined, CloseCircleOutlined, SnippetsOutlined, ExceptionOutlined, CodeOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import type { ColumnsType } from 'antd/es/table';
 import type { Answer, BloomLevel, Quest, Question, QuestionFormValues, QuestionType } from '../../types/QuestionType';
+import MathInputPreview from '../../components/ui/MathInput/MathInputPreview';
+import { InlineMath } from 'react-katex';
+
+const { TextArea } = Input;
+
+const latexSymbols = [
+    { label: '\\frac{a}{b}', latex: '\\frac{}{}', tooltip: 'Phân số (\\frac)' },
+    { label: 'a^{b}', latex: '^{}', tooltip: 'Mũ/Số mũ (a^b)' },
+    { label: 'a_{b}', latex: '_{}', tooltip: 'Chỉ số dưới (a_b)' },
+    { label: '\\sqrt{a}', latex: '\\sqrt{}', tooltip: 'Căn bậc hai (\\sqrt)' },
+    { label: '\\sum', latex: '\\sum_{i=1}^{n}', tooltip: 'Tổng (\\sum)' },
+    { label: '\\int', latex: '\\int_{a}^{b}', tooltip: 'Tích phân (\\int)' },
+    { label: '\\alpha', latex: '\\alpha', tooltip: 'Ký hiệu Alpha (\\alpha)' },
+    { label: '±', latex: '\\pm', tooltip: 'Cộng trừ (\\pm)' },
+];
 
 const BloomLevels = {
     REMEMBER: 'remember' as BloomLevel,
@@ -39,13 +55,55 @@ const QuestionTypes = {
     REORDER: 'reorder' as QuestionType,
     MATCHING: 'matching' as QuestionType,
     NUMERIC: 'numeric' as QuestionType,
-    SEQUENCE: 'sequence' as QuestionType
+    SEQUENCE: 'sequence' as QuestionType,
+    PROGRAMMING: 'programming' as QuestionType,
+    CODE_SNIPPET: 'code_snippet' as QuestionType
 };
 
 // --- CONFIGURATION ---
 
 const API_QUESTION_URL = 'http://localhost:8081/api/questions';
 const API_QUEST_URL = 'http://localhost:8081/api/quests'; 
+
+
+const LatexDisplayInTable: React.FC<{ text: string }> = ({ text }) => {
+    // Tách nội dung LaTeX $...$ hoặc sử dụng toàn bộ nếu thấy có lệnh
+    const inlineMatch = text.match(/\$(.*?)\$/);
+    const contentToRender = inlineMatch ? inlineMatch[1].trim() : (text.includes('\\') ? text : null);
+
+    if (contentToRender) {
+        try {
+            // Cố gắng render nội dung LaTeX
+            return (
+                <Tooltip title={text}>
+                    <div className="max-w-[250px] truncate overflow-hidden text-lg font-serif">
+                        <InlineMath math={contentToRender} />
+                        {!inlineMatch && text.length > 30 ? '...' : ''} {/* Thêm ... nếu nội dung dài */}
+                    </div>
+                </Tooltip>
+            );
+        } catch (e) {
+            // Nếu có lỗi parse LaTeX, hiển thị dưới dạng văn bản (và rút gọn)
+            return (
+                <Tooltip title={`Lỗi LaTeX: ${text}`}>
+                    <Tag color="red" className="truncate max-w-[250px] block" title={text}>
+                         [Lỗi] {text.length > 40 ? text.substring(0, 40) + '...' : text}
+                    </Tag>
+                </Tooltip>
+            );
+        }
+    }
+    
+    // Mặc định: Hiển thị văn bản thường, rút gọn
+    return (
+        <Tooltip title={text}>
+            <span className="max-w-[250px] truncate inline-block" title={text}>
+                {text.length > 50 ? text.substring(0, 50) + '...' : text}
+            </span>
+        </Tooltip>
+    );
+};
+
 
 // --- UTILITIES & FORMATTING ---
 
@@ -67,6 +125,7 @@ const formatQuestionType = (type: QuestionType) => {
         case QuestionTypes.MATCHING: return <Tag color="magenta">Ghép cặp</Tag>;
         case QuestionTypes.NUMERIC: return <Tag color="lime">Điền số</Tag>;
         case QuestionTypes.SEQUENCE: return <Tag color="geekblue">Điền dãy số</Tag>;
+        case QuestionTypes.PROGRAMMING: return <Tag color="black">Lập trình</Tag>;
         default: return <Tag>{type}</Tag>;
     }
 }
@@ -75,7 +134,7 @@ const getDefaultAnswers = (): Answer[] => [
     { answerText: '', correct: false },
     { answerText: '', correct: false },
     { answerText: '', correct: false },
-    { answerText: '', correct: true }, // Câu trả lời mặc định là đúng
+    { answerText: '', correct: true },
 ];
 
 const DynamicAnswerFields = ({ form, currentQuestionType }: { form: any, currentQuestionType: QuestionType | undefined }) => {
@@ -84,10 +143,23 @@ const DynamicAnswerFields = ({ form, currentQuestionType }: { form: any, current
 
     // --- CASE 1: MULTIPLE_CHOICE (Giữ nguyên) ---
     if (currentQuestionType === QuestionTypes.MULTIPLE_CHOICE) {
-        // ... Logic Multiple Choice (giống như code bạn đã cung cấp)
         return (
             <>
                 <Divider orientation="left">Danh sách Câu trả lời (Trắc nghiệm)</Divider>
+                <Form.Item
+                    name="partialCredit"
+                    label="Điểm thưởng một phần (Partial Credit)"
+                    tooltip="Phần trăm XP nhận được nếu chỉ trả lời đúng một số cặp (0-100)"
+                    rules={[{ required: true, message: 'Nhập giá trị Partial Credit!' }]}
+                >
+                    <InputNumber <number>
+                        min={0} 
+                        max={100} 
+                        formatter={value => `${value}%`} 
+                        parser={value => parseInt(value?.replace('%', '') ?? '0', 10)} 
+                        className="w-full" 
+                    />
+                </Form.Item>
                 <Form.List name="answers" rules={[
                     { 
                         validator: async (_, answers) => {
@@ -114,17 +186,10 @@ const DynamicAnswerFields = ({ form, currentQuestionType }: { form: any, current
                                         rules={[{ required: true, message: 'Nhập nội dung trả lời' }]}
                                         style={{ flexGrow: 1, marginRight: '8px' }}
                                     >
-                                        <Input 
-                                            placeholder={`Câu trả lời ${index + 1}`} 
-                                            prefix={
-                                                <Tag 
-                                                    color={form.getFieldValue(['answers', name, 'isCorrect']) ? 'green' : 'red'}
-                                                    className="mr-2"
-                                                >
-                                                    {form.getFieldValue(['answers', name, 'isCorrect']) ? 'Đúng' : 'Sai'}
-                                                </Tag>
-                                            }
-                                        />
+                                        <MathInputPreview
+                                        rows={3}
+                                        placeholder={`Nội dung Đáp án ${index + 1}`}
+                                    />
                                     </Form.Item>
                                     
                                     {/* Radio Button for Correctness */}
@@ -219,6 +284,12 @@ const DynamicAnswerFields = ({ form, currentQuestionType }: { form: any, current
                         );
                     }}
                 </Form.List>
+                <Form.Item 
+                    name="synonyms"
+                    label="Các từ đồng nghĩa/Đáp án thay thế (Phân cách bằng dấu phẩy)"
+                >
+                    <Input.TextArea rows={2} placeholder="Ví dụ: hàng đợi,hàng đợi ưu tiên" />
+                </Form.Item>
             </>
         );
     }
@@ -267,7 +338,6 @@ const DynamicAnswerFields = ({ form, currentQuestionType }: { form: any, current
                                         </Radio.Button>
                                     </Radio.Group>
                                 </Form.Item>
-                                {/* Thêm trường ẩn text và đảm bảo nó tồn tại */}
                                 <Form.Item 
                                     name={[0, 'text']} 
                                     initialValue={isCorrectValue ? 'True' : 'False'} 
@@ -307,7 +377,7 @@ const DynamicAnswerFields = ({ form, currentQuestionType }: { form: any, current
                                     <Input 
                                         placeholder="Ví dụ: 123.45" 
                                         prefix={<FireOutlined className="text-gold-500 mr-2" />}
-                                        type="number" // Sử dụng type number cho Input
+                                        type="number"
                                     />
                                 </Form.Item>
                                 <Form.Item 
@@ -333,6 +403,20 @@ const DynamicAnswerFields = ({ form, currentQuestionType }: { form: any, current
         return (
             <>
                 <Divider orientation="left">Danh sách Cặp Ghép (Đúng)</Divider>
+                <Form.Item
+                    name="partialCredit"
+                    label="Điểm thưởng một phần (Partial Credit)"
+                    tooltip="Phần trăm XP nhận được nếu chỉ trả lời đúng một số cặp (0-100)"
+                    rules={[{ required: true, message: 'Nhập giá trị Partial Credit!' }]}
+                >
+                    <InputNumber <number>
+                        min={0} 
+                        max={100} 
+                        formatter={value => `${value}%`} 
+                        parser={value => parseInt(value?.replace('%', '') ?? '0', 10)} 
+                        className="w-full" 
+                    />
+                </Form.Item>
                 <Form.List name="answers" rules={[
                     { validator: async (_, answers) => {
                         if (!answers || answers.length < 2) {
@@ -358,7 +442,7 @@ const DynamicAnswerFields = ({ form, currentQuestionType }: { form: any, current
                                     <Col span={10}>
                                         <Form.Item
                                             {...restField}
-                                            name={[name, 'answerMeta']} // <<< SỬA: Dùng answerMeta
+                                            name={[name, 'answerMeta']} // Dùng answerMeta
                                             fieldKey={[fieldKey as number, 'answerMeta']}
                                             rules={[{ required: true, message: 'Nhập Mục B' }]}
                                             className="mb-0"
@@ -443,12 +527,66 @@ const DynamicAnswerFields = ({ form, currentQuestionType }: { form: any, current
         );
     }
 
-    // Trường hợp QuestionType khác (ví dụ: REORDER chưa triển khai)
+    if (currentQuestionType === QuestionTypes.PROGRAMMING) {
+        return (
+            <>
+                <Divider orientation="left">Cấu hình Bài toán Lập trình</Divider>
+                <Form.Item
+                    name="codeTemplate" // <<< TRƯỜNG MỚI: codeTemplate
+                    label={<> <CodeOutlined /> Code Mẫu (Template)</>}
+                    tooltip="Hàm/class/interface mẫu để người dùng điền code vào."
+                    rules={[{ required: true, message: 'Vui lòng cung cấp code mẫu!' }]}
+                >
+                    <Input.TextArea 
+                        rows={6}
+                        placeholder="Ví dụ: def solve(a: int, b: int) -> int:\n    # Viết code của bạn ở đây\n    pass" 
+                        className="font-mono text-sm"
+                    />
+                </Form.Item>
+                <Row gutter={16}>
+                    <Col span={12}>
+                        <Form.Item
+                            name="testCases" // <<< TRƯỜNG MỚI: testCases
+                            label={<> <SnippetsOutlined /> Test Cases (JSON Input)</>}
+                            tooltip="Mảng JSON chứa các bộ dữ liệu đầu vào. Ví dụ: [{'input': [1, 2]}, {'input': [10, -5}]]."
+                            rules={[{ required: true, message: 'Vui lòng cung cấp Test Cases!' }]}
+                        >
+                            <Input.TextArea 
+                                rows={4}
+                                placeholder='[{"input": [1, 2], "expected_output": 3}, {"input": [10, -5], "expected_output": 5}]'
+                                className="font-mono text-xs"
+                            />
+                        </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                        <Form.Item
+                            name="testResults" // <<< TRƯỜNG MỚI: testResults
+                            label={<> <ExceptionOutlined /> Test Results (JSON Output)</>}
+                            tooltip="Mảng JSON chứa các kết quả đầu ra mong đợi tương ứng với Test Cases. Ví dụ: [3, 5, 0] hoặc [true, false]."
+                            rules={[{ required: true, message: 'Vui lòng cung cấp Kết quả mong đợi!' }]}
+                        >
+                            <Input.TextArea 
+                                rows={4}
+                                placeholder='[3, 5]' 
+                                className="font-mono text-xs"
+                            />
+                        </Form.Item>
+                    </Col>
+                </Row>
+                <p className="text-sm text-gray-500 mt-[-10px]">
+                    <span className="font-semibold text-red-500">*</span> Đối với loại **Lập trình**, không cần nhập phần Answers.
+                </p>
+            </>
+        );
+    }
+
+    // --- CASE 8 & 9: REORDER & CODE_SNIPPET (Tạm thời dùng mặc định) ---
+    // REORDER có thể dùng partialCredit, nhưng để đơn giản hóa, ta chỉ thêm trường partialCredit vào Form chính.
     return (
         <Card className="mt-4 border-dashed border-gray-300">
             <p className="text-center text-gray-500">
                 <QuestionCircleOutlined className="mr-2" /> 
-                Giao diện nhập câu trả lời cho loại **{currentQuestionType}** chưa được triển khai.
+                Loại **{currentQuestionType}** không cần cấu hình đáp án đặc biệt hoặc giao diện nhập chưa được triển khai.
             </p>
         </Card>
     );
@@ -501,74 +639,118 @@ export default function QuestionManager() {
     // --- CRUD HANDLERS ---
 
     const handleSave = async (values: QuestionFormValues) => {
+        console.log("values",values)
         setLoading(true);
 
         let answersDto: Answer[] = [];
+        let partialCredit: number | null = null;
+        let synonyms: string | null = null;
+        let codeTemplate: string | null = null;
+        let testCases: string | null = null;
+        let testResults: string | null = null;
 
-        // Chuyển đổi format Answers từ Form sang DTO dựa trên QuestionType
+
+        // Chuyển đổi format Answers và lấy các trường phụ dựa trên QuestionType
         switch (values.questionType) {
+            
+            case QuestionTypes.PROGRAMMING:
+                codeTemplate = values.codeTemplate || null;
+                testCases = values.testCases || null;
+                testResults = values.testResults || null;
+                break;
+
             case QuestionTypes.FILL_IN_BLANK:
+                synonyms = values.synonyms || null;
             case QuestionTypes.NUMERIC:
             case QuestionTypes.TRUE_FALSE:
             case QuestionTypes.SEQUENCE: 
-                const mainAnswer = values.answers[0];
-                let answerText = mainAnswer.text;
-                let isCorrect = mainAnswer.isCorrect;
-                let answerMeta = mainAnswer.answerMeta || null; // Giữ nguyên answerMeta nếu có
+                const mainAnswer = values.answers?.[0];
 
-                if (values.questionType === QuestionTypes.TRUE_FALSE) {
-                    answerText = isCorrect ? 'True' : 'False';
-                } else if (values.questionType === QuestionTypes.SEQUENCE) {
-                    // Xử lý cho Chuỗi số: loại bỏ khoảng trắng thừa
-                    answerText = answerText.replace(/\s/g, ''); 
-                    isCorrect = true; // Luôn là true vì đây là câu trả lời chính xác
+                if (mainAnswer) {
+                    let answerText = mainAnswer.text;
+                    let isCorrect = mainAnswer.isCorrect;
+                    let answerMeta = mainAnswer.answerMeta || null;
+
+                    if (values.questionType === QuestionTypes.TRUE_FALSE) {
+                        answerText = isCorrect ? 'True' : 'False';
+                    } else if (values.questionType === QuestionTypes.SEQUENCE) {
+                        answerText = answerText.replace(/\s/g, ''); 
+                        isCorrect = true;
+                    }
+                    
+                    answersDto = [{
+                        answerText: answerText,
+                        correct: isCorrect,
+                        answerMeta: answerMeta
+                    }];
+                } else {
+                    // Xử lý trường hợp không có answer cho các loại này (lỗi validation)
+                    answersDto = [];
                 }
                 
-                answersDto = [{
-                    answerText: answerText,
-                    correct: isCorrect,
-                    answerMeta: answerMeta // Truyền answerMeta (nếu có)
-                }];
                 break;
 
             case QuestionTypes.MATCHING:
-                // SỬA: Gửi Mục A vào answerText và Mục B vào answerMeta
+                // Ghép cặp: Lấy partialCredit và định dạng Answers
+                partialCredit = values.partialCredit || null;
                 answersDto = values.answers.map(ans => ({
-                    answerText: ans.text,      // Mục A
-                    correct: true,             // Luôn là true
-                    answerMeta: ans.answerMeta // <<< SỬA: Mục B (được lấy từ trường mới)
+                    answerText: ans.text,
+                    correct: true,
+                    answerMeta: ans.answerMeta
                 }));
                 break;
 
+            case QuestionTypes.REORDER:
+                // Sắp xếp: Lấy partialCredit
+                partialCredit = values.partialCredit || null;
+                // Vẫn dùng Answers như Multiple Choice (dùng answerMeta cho thứ tự)
             case QuestionTypes.MULTIPLE_CHOICE:
             default:
-                // Multiple Choice và các loại khác (REORDER, v.v...)
+                // Multiple Choice và các loại khác: Lấy Answers
+                partialCredit = values.partialCredit || null;
                 answersDto = values.answers.map(ans => ({
                     answerText: ans.text,
                     correct: ans.isCorrect,
-                    answerMeta: ans.answerMeta || null // Đảm bảo trường này tồn tại
+                    answerMeta: ans.answerMeta || null
                 }));
                 break;
         }
 
         // Payload gửi lên Backend (tương thích với QuestionCreateDto/QuestionUpdateDto)
         const payload = {
-            ...values,
-            answers: answersDto,
             questId: values.questId,
+            questionText: values.questionText,
+            bloomLevel: values.bloomLevel,
+            questionType: values.questionType,
+            correctXpReward: values.correctXpReward,
+            // Các trường phụ mới
+            partialCredit: partialCredit,
+            synonyms: synonyms,
+            codeTemplate: codeTemplate,
+            testCases: testCases,
+            testResults: testResults,
+            // Answers
+            answers: answersDto,
         };
 
-        // Gỡ bỏ logic cũ: Bạn không cần truyền các trường khác vào PUT, chỉ cần truyền các trường muốn update.
-        // Tuy nhiên, để đơn giản hóa, ta gửi toàn bộ payload vì DTO Update của bạn linh hoạt.
+        
         const apiPayload = isEditing ? { 
             // Cập nhật các trường Question (Optional)
             questionText: values.questionText,
             bloomLevel: values.bloomLevel,
             questionType: values.questionType,
             correctXpReward: values.correctXpReward,
+            // Các trường phụ
+            partialCredit: partialCredit,
+            synonyms: synonyms,
+            codeTemplate: codeTemplate,
+            testCases: testCases,
+            testResults: testResults,
             // Cập nhật Answers (List)
             answers: payload.answers 
         } : payload;
+
+        console.log("apiPayload",apiPayload)
         
         try {
              if (isEditing && currentQuestion) {
@@ -577,7 +759,7 @@ export default function QuestionManager() {
                  message.success(`Câu hỏi ID ${currentQuestion.questionId} đã được cập nhật.`);
              } else {
                  // CREATE
-                 await axios.post(API_QUESTION_URL, apiPayload);
+                 await axios.post(API_QUESTION_URL, payload); // Dùng payload đầy đủ cho CREATE
                  message.success(`Câu hỏi "${values.questionText.substring(0, 30)}..." đã được tạo mới.`);
              }
             
@@ -618,6 +800,7 @@ export default function QuestionManager() {
             questionType: QuestionTypes.MULTIPLE_CHOICE, 
             bloomLevel: BloomLevels.REMEMBER, 
             correctXpReward: 10,
+            partialCredit: 0, // Giá trị mặc định cho Partial Credit
             answers: getDefaultAnswers().map(ans => ({
                 text: ans.answerText, 
                 isCorrect: ans.correct
@@ -633,21 +816,22 @@ export default function QuestionManager() {
         // Chuẩn bị dữ liệu Answers cho Form
         let formAnswers: any[] = [];
         
-        if (question.questionType === QuestionTypes.MULTIPLE_CHOICE || question.questionType === QuestionTypes.REORDER) {
+        if (question.questionType === QuestionTypes.MULTIPLE_CHOICE || question.questionType === QuestionTypes.REORDER || question.questionType === QuestionTypes.CODE_SNIPPET) {
             formAnswers = question.answers.map(ans => ({
                 text: ans.answerText, 
                 isCorrect: ans.correct,
-                answerMeta: ans.answerMeta // Đảm bảo lấy answerMeta cho các loại này (nếu có)
+                answerMeta: ans.answerMeta
             }));
-        } else if (question.questionType === QuestionTypes.FILL_IN_BLANK || question.questionType === QuestionTypes.NUMERIC || question.questionType === QuestionTypes.TRUE_FALSE) {
+        } else if (question.questionType === QuestionTypes.FILL_IN_BLANK || question.questionType === QuestionTypes.NUMERIC || question.questionType === QuestionTypes.TRUE_FALSE || question.questionType === QuestionTypes.SEQUENCE) {
             // Chỉ có 1 đáp án đúng duy nhất
             const correctAns = question.answers.find(ans => ans.correct) || question.answers[0] || { answerText: '', correct: true };
             
             let isCorrectValue = correctAns.correct;
 
             if (question.questionType === QuestionTypes.TRUE_FALSE) {
-                // Đối với True/False, isCorrect value được sử dụng để hiển thị nút
                 isCorrectValue = correctAns.correct;
+            } else if (question.questionType === QuestionTypes.SEQUENCE) {
+                // Đảm bảo không bị loại bỏ khoảng trắng khi hiển thị lại
             }
             
             formAnswers = [{ 
@@ -657,30 +841,28 @@ export default function QuestionManager() {
             }];
 
         } else if (question.questionType === QuestionTypes.MATCHING) {
-            // SỬA: Lấy Mục A từ answerText và Mục B từ answerMeta
+            // Lấy Mục A từ answerText và Mục B từ answerMeta
             formAnswers = question.answers.map(ans => {
                 return { 
-                    text: ans.answerText || '',      // <<< Mục A (answerText)
-                    answerMeta: ans.answerMeta || '',// <<< Mục B (answerMeta)
-                    isCorrect: true                  // Luôn là true cho Matching
+                    text: ans.answerText || '',
+                    answerMeta: ans.answerMeta || '',
+                    isCorrect: true
                 };
             });
-        } else if (question.questionType === QuestionTypes.SEQUENCE) {
-            // Sequence: Chuỗi số
-            const correctAns = question.answers.find(ans => ans.correct) || question.answers[0] || { answerText: '', correct: true };
-            formAnswers = [{ 
-                text: correctAns.answerText || '', // Lấy chuỗi số đã lưu
-                isCorrect: true, 
-                answerMeta: correctAns.answerMeta 
-            }];
-        }
-
+        } 
+        
+        // Gán giá trị vào Form (bao gồm cả các trường phụ mới)
         form.setFieldsValue({
             questId: question.quest.questId,
             questionText: question.questionText,
             bloomLevel: question.bloomLevel,
             questionType: question.questionType,
             correctXpReward: question.correctXpReward,
+            partialCredit: question.partialCredit ?? 0,
+            synonyms: question.synonyms ?? undefined,
+            codeTemplate: question.codeTemplate ?? undefined,
+            testCases: question.testCases ?? undefined,
+            testResults: question.testResults ?? undefined,
             answers: formAnswers,
         });
         setIsModalOpen(true);
@@ -702,6 +884,7 @@ export default function QuestionManager() {
             key: 'questionText',
             ellipsis: true,
             width: 300,
+            render: (text: string) => <LatexDisplayInTable text={text} />,
         },
         {
             title: 'XP',
@@ -791,7 +974,6 @@ export default function QuestionManager() {
                 />
             </Spin>
 
-            {/* Modal Tạo Mới / Chỉnh Sửa */}
             <Modal
                 title={isEditing ? `Chỉnh sửa Câu hỏi ID: ${currentQuestion?.questionId}` : 'Tạo Câu hỏi Mới'}
                 open={isModalOpen}
@@ -808,6 +990,7 @@ export default function QuestionManager() {
                         questionType: QuestionTypes.MULTIPLE_CHOICE,
                         bloomLevel: BloomLevels.REMEMBER, 
                         correctXpReward: 10,
+                        partialCredit: 0,
                     }}
                     className="mt-4"
                 >
@@ -845,11 +1028,14 @@ export default function QuestionManager() {
                         label="Nội dung Câu hỏi"
                         rules={[{ required: true, message: 'Vui lòng nhập nội dung câu hỏi!' }]}
                     >
-                        <Input.TextArea rows={4} placeholder="Nhập câu hỏi tại đây..." />
+                        <MathInputPreview
+                            rows={6}
+                            placeholder="Nhập nội dung câu hỏi. Sử dụng $...$ cho công thức inline hoặc $$...$$ cho công thức riêng biệt."
+                        />
                     </Form.Item>
 
                     <Row gutter={24}>
-                        <Col span={12}>
+                        <Col span={8}>
                             <Form.Item
                                 name="bloomLevel"
                                 label="Cấp độ Bloom"
@@ -864,7 +1050,7 @@ export default function QuestionManager() {
                                 </Select>
                             </Form.Item>
                         </Col>
-                        <Col span={12}>
+                        <Col span={8}>
                             <Form.Item
                                 name="questionType"
                                 label="Loại Câu hỏi"
@@ -877,14 +1063,35 @@ export default function QuestionManager() {
                                     <Select.Option value={QuestionTypes.MATCHING}>Ghép cặp</Select.Option>
                                     <Select.Option value={QuestionTypes.NUMERIC}>Điền số</Select.Option>
                                     <Select.Option value={QuestionTypes.SEQUENCE}>Điền chuỗi số</Select.Option>
-                                    {/* Thêm các loại khác nếu cần */}
+                                    <Select.Option value={QuestionTypes.PROGRAMMING}>Lập trình</Select.Option> 
+                                    <Select.Option value={QuestionTypes.REORDER}>Sắp xếp</Select.Option>
                                 </Select>
                             </Form.Item>
                         </Col>
+                        {(currentQuestionType === QuestionTypes.REORDER) && (
+                            <Col span={8}>
+                                <Form.Item
+                                    name="partialCredit"
+                                    label="Điểm thưởng một phần"
+                                    tooltip="Phần trăm XP nếu sắp xếp đúng một phần (0-100)"
+                                    rules={[{ required: true, message: 'Nhập giá trị Partial Credit!' }]}
+                                >
+                                    <InputNumber <number>
+                                        min={0} 
+                                        max={100} 
+                                        formatter={value => `${value}%`} 
+                                        parser={value => parseInt(value?.replace('%', '') ?? '0', 10)} 
+                                        className="w-full" 
+                                    />
+                                </Form.Item>
+                            </Col>
+                        )}
                     </Row>
                     
                     <DynamicAnswerFields form={form} currentQuestionType={currentQuestionType} />
-
+                    <Form.Item name="synonyms" hidden>
+                        <Input type="hidden" />
+                    </Form.Item>
                     <Form.Item className="mt-6">
                         <Space>
                             <Button 

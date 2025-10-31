@@ -11,6 +11,7 @@ interface Topic {
 
 interface Quest {
     questId: number;
+    orderIndex: number;
     questName: string;
     questType: QuestType;
     difficulty: Difficulty;

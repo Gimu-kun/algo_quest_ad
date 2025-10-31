@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     Table,
     Button,
@@ -18,13 +18,18 @@ import {
     Col,
     Divider,
     Tooltip,
+    Alert,
 } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, QuestionCircleOutlined, FireOutlined, CheckCircleOutlined, CloseCircleOutlined, SnippetsOutlined, ExceptionOutlined, CodeOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, QuestionCircleOutlined, FireOutlined, CheckCircleOutlined, CloseCircleOutlined, SnippetsOutlined, ExceptionOutlined, CodeOutlined, MenuOutlined, ExclamationCircleOutlined, SaveOutlined, SortAscendingOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import type { ColumnsType } from 'antd/es/table';
 import type { Answer, BloomLevel, Quest, Question, QuestionFormValues, QuestionType } from '../../types/QuestionType';
 import MathInputPreview from '../../components/ui/MathInput/MathInputPreview';
 import { InlineMath } from 'react-katex';
+import { DndProvider, useDrag, useDrop } from 'react-dnd';
+import React from 'react';
+import type { OrderItem } from '../../types/OrderType';
+import { HTML5Backend } from 'react-dnd-html5-backend';
 
 const { TextArea } = Input;
 
@@ -64,6 +69,65 @@ const QuestionTypes = {
 
 const API_QUESTION_URL = 'http://localhost:8081/api/questions';
 const API_QUEST_URL = 'http://localhost:8081/api/quests'; 
+const QUESTION_ORDER_API_URL = 'http://localhost:8081/api/content/order/questions';
+
+const QUESTION_DND_TYPE = 'DraggableQuestionRow';
+
+interface DraggableRowProps extends React.HTMLAttributes<HTMLTableRowElement> {
+    index: number;
+    moveRow: (dragIndex: number, hoverIndex: number) => void;
+    className: string; 
+    style: React.CSSProperties;
+    'data-handler-id'?: string | undefined; 
+}
+
+const DraggableQuestionRow: React.FC<DraggableRowProps> = ({ index, moveRow, className, style, ...restProps }) => {
+    // ... (Thân hàm giữ nguyên, chỉ đảm bảo `accept` và `type` là QUESTION_DND_TYPE) ...
+    const ref = React.useRef<HTMLTableRowElement>(null);
+    
+    const [{ handlerId }, drop] = useDrop<{ index: number; type: string }, unknown, { handlerId: string | symbol | null }>({
+        accept: QUESTION_DND_TYPE, 
+        collect: (monitor) => ({ handlerId: monitor.getHandlerId() }),
+        hover(item, monitor) {
+            // ... Logic kéo thả
+            if (!ref.current) return;
+            const dragIndex = item.index;
+            const hoverIndex = index;
+            if (dragIndex === hoverIndex) return;
+
+            const hoverBoundingRect = ref.current?.getBoundingClientRect();
+            const hoverMiddleY = (hoverBoundingRect.bottom - hoverBoundingRect.top) / 2;
+            const clientOffset = monitor.getClientOffset();
+            const hoverClientY = clientOffset!.y - hoverBoundingRect.top;
+
+            if (dragIndex < hoverIndex && hoverClientY < hoverMiddleY) return;
+            if (dragIndex > hoverIndex && hoverClientY > hoverMiddleY) return;
+
+            moveRow(dragIndex, hoverIndex);
+            item.index = hoverIndex;
+        },
+    });
+
+    const [{ isDragging }, drag] = useDrag({
+        type: QUESTION_DND_TYPE, 
+        item: () => ({ index }),
+        collect: (monitor) => ({ isDragging: monitor.isDragging() }),
+    });
+
+    drag(drop(ref));
+
+    const opacity = isDragging ? 0.2 : 1;
+
+    return (
+        <tr
+            ref={ref}
+            className={className}
+            style={{ ...style, cursor: 'grab', opacity }} 
+            data-handler-id={handlerId as string | undefined} 
+            {...restProps}
+        />
+    );
+};
 
 
 const LatexDisplayInTable: React.FC<{ text: string }> = ({ text }) => {
@@ -603,6 +667,11 @@ export default function QuestionManager() {
     const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
     const [form] = Form.useForm<QuestionFormValues>();
     const currentQuestionType = Form.useWatch('questionType', form);
+    const [selectedQuestForOrder, setSelectedQuestForOrder] = useState<number | undefined>(undefined);
+    const [questionsForOrdering, setQuestionsForOrdering] = useState<Question[]>([]);
+    const [originalQuestionsOrder, setOriginalQuestionsOrder] = useState<Question[]>([]);
+    const [isSavingQuestionOrder, setIsSavingQuestionOrder] = useState(false);
+    const [isLoadingOrderData, setIsLoadingOrderData] = useState(false);
 
     // --- FETCH DATA ---
 
@@ -620,21 +689,104 @@ export default function QuestionManager() {
     const fetchQuestions = useCallback(async () => {
         setLoading(true);
         try {
-            // Lấy danh sách Questions (bao gồm Answers và Quest)
             const response = await axios.get<Question[]>(API_QUESTION_URL);
-            setQuestions(response.data);
+            // Sắp xếp theo Quest rồi đến orderIndex
+            const sortedQuestions = response.data.sort((a, b) => {
+                // Giả định Quest có trường questId trong type Question
+                if (a.quest.questId !== b.quest.questId) {
+                    return a.quest.questId - b.quest.questId;
+                }
+                return (a.orderIndex || 0) - (b.orderIndex || 0); 
+            });
+            setQuestions(sortedQuestions);
         } catch (error) {
             console.error("Error fetching questions:", error);
-            message.error('Không thể tải ngân hàng Câu hỏi.');
+            message.error('Không thể tải danh sách Câu hỏi.');
         } finally {
             setLoading(false);
         }
     }, []);
 
     useEffect(() => {
+        if (selectedQuestForOrder && questions.length > 0) {
+            setIsLoadingOrderData(true);
+            const filtered = questions
+                .filter(q => q.quest.questId === selectedQuestForOrder)
+                .sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0)); 
+            
+            setQuestionsForOrdering(filtered);
+            setOriginalQuestionsOrder(filtered); 
+            setIsLoadingOrderData(false);
+        } else {
+            setQuestionsForOrdering([]);
+            setOriginalQuestionsOrder([]);
+        }
+    }, [selectedQuestForOrder, questions]);
+
+    useEffect(() => {
         fetchQuestions();
         fetchQuests();
     }, [fetchQuestions, fetchQuests]);
+
+    const moveQuestionRow = useCallback((dragIndex: number, hoverIndex: number) => {
+        const dragQuestion = questionsForOrdering[dragIndex];
+        const newQuestions = [...questionsForOrdering];
+        
+        newQuestions.splice(dragIndex, 1);
+        newQuestions.splice(hoverIndex, 0, dragQuestion);
+
+        setQuestionsForOrdering(newQuestions);
+    }, [questionsForOrdering]);
+
+    const hasQuestionOrderChanged = useMemo(() => {
+        if (questionsForOrdering.length !== originalQuestionsOrder.length) return false;
+        for (let i = 0; i < questionsForOrdering.length; i++) {
+            if (questionsForOrdering[i].questionId !== originalQuestionsOrder[i].questionId) {
+                return true;
+            }
+        }
+        return false;
+    }, [questionsForOrdering, originalQuestionsOrder]);
+
+    const saveQuestionOrder = async () => {
+        if (!hasQuestionOrderChanged || !selectedQuestForOrder) {
+            message.info('Thứ tự Question chưa thay đổi hoặc chưa chọn Quest.');
+            return;
+        }
+        
+        setIsSavingQuestionOrder(true);
+        
+        try {
+            const orderItems: OrderItem[] = questionsForOrdering.map((question, index) => ({
+                id: question.questionId,
+                orderIndex: index + 1,
+            }));
+            
+            const payload = { items: orderItems };
+            
+            await axios.put(QUESTION_ORDER_API_URL, payload);
+
+            // Cập nhật state nội bộ
+            const updatedQuestionsForOrdering = questionsForOrdering.map((q, index) => ({ ...q, orderIndex: index + 1 }));
+            setQuestionsForOrdering(updatedQuestionsForOrdering);
+            setOriginalQuestionsOrder(updatedQuestionsForOrdering);
+            
+            // Cập nhật state chính
+            setQuestions(prevQuestions => 
+                prevQuestions.map(q => {
+                    const updatedQ = updatedQuestionsForOrdering.find(uQ => uQ.questionId === q.questionId);
+                    return updatedQ ? { ...q, orderIndex: updatedQ.orderIndex } : q;
+                })
+            );
+
+            message.success('Thứ tự Questions đã được cập nhật trên server!');
+        } catch (error) {
+            console.error("Error saving question order:", error);
+            message.error('Lỗi: Không thể lưu thứ tự Questions. Kiểm tra kết nối API.');
+        } finally {
+            setIsSavingQuestionOrder(false);
+        }
+    };
 
     // --- CRUD HANDLERS ---
 
@@ -879,6 +1031,15 @@ export default function QuestionManager() {
             sorter: (a, b) => a.questionId - b.questionId,
         },
         {
+            title: "Thứ tự (DB)",
+            dataIndex: 'orderIndex',
+            key: 'orderIndex',
+            width: 120,
+            align: 'center',
+            sorter: (a, b) => (a.orderIndex || 0) - (b.orderIndex || 0),
+            render: (orderIndex: number) => <Tag color="geekblue">{orderIndex}</Tag>
+        },
+        {
             title: 'Nội dung Câu hỏi',
             dataIndex: 'questionText',
             key: 'questionText',
@@ -943,172 +1104,293 @@ export default function QuestionManager() {
         },
     ];
 
+    const questionOrderColumns: ColumnsType<Question> = [
+        {
+            title: <MenuOutlined className="text-lg text-gray-500" />,
+            dataIndex: 'sort',
+            width: 50,
+            className: 'drag-visible',
+            render: () => <MenuOutlined className="cursor-grab text-xl text-indigo-500 hover:text-indigo-700 transition" />,
+        },
+        {
+            title: "Thứ tự Mới",
+            dataIndex: 'newOrderIndex',
+            key: 'newOrderIndex',
+            width: 120,
+            align: 'center',
+            render: (_, __, index) => (
+                <Tag color="blue" className="text-lg font-bold p-1 min-w-[30px] shadow-md">
+                    {index + 1}
+                </Tag>
+            )
+        },
+        {
+            title: 'ID Câu hỏi',
+            dataIndex: 'questionId',
+            key: 'questionId',
+            width: 100,
+        },
+        {
+            title: 'Nội dung Câu hỏi',
+            dataIndex: 'questionText',
+            key: 'questionText',
+            // LatexDisplayInTable là component có sẵn trong file của bạn
+            render: (text: string, record: Question) => <LatexDisplayInTable text={text} /> 
+        },
+    ];
+
+    const questionComponents = {
+        body: {
+            row: DraggableQuestionRow,
+        },
+    };
+
     return (
-        <Card 
-            title={
-                <Space className="w-full justify-between items-center">
-                    <h2 className="text-xl font-semibold text-gray-800">
-                        <QuestionCircleOutlined className="mr-2 text-blue-600" /> Ngân hàng Câu hỏi
-                    </h2>
-                    <Button 
-                        type="primary" 
-                        icon={<PlusOutlined />} 
-                        onClick={showCreateModal}
-                        className="bg-green-500 hover:bg-green-600 rounded-lg shadow-md"
-                    >
-                        Thêm Câu hỏi Mới
-                    </Button>
-                </Space>
-            }
-            variant="outlined"
-            className="rounded-xl shadow-lg"
-        >
-            <Spin spinning={loading} size="large">
-                <Table
-                    columns={columns}
-                    dataSource={questions}
-                    rowKey="questionId"
-                    pagination={{ pageSize: 10 }}
-                    className="overflow-x-auto" 
-                    scroll={{ x: 'max-content' }}
-                />
-            </Spin>
-
-            <Modal
-                title={isEditing ? `Chỉnh sửa Câu hỏi ID: ${currentQuestion?.questionId}` : 'Tạo Câu hỏi Mới'}
-                open={isModalOpen}
-                onCancel={() => setIsModalOpen(false)}
-                footer={null} 
-                width={800}
-                destroyOnHidden={true}
+        <DndProvider backend={HTML5Backend}>
+            <Card 
+                title={
+                    <Space className="w-full justify-between items-center">
+                        <h2 className="text-xl font-semibold text-gray-800">
+                            <QuestionCircleOutlined className="mr-2 text-blue-600" /> Ngân hàng Câu hỏi
+                        </h2>
+                        <Button 
+                            type="primary" 
+                            icon={<PlusOutlined />} 
+                            onClick={showCreateModal}
+                            className="bg-green-500 hover:bg-green-600 rounded-lg shadow-md"
+                        >
+                            Thêm Câu hỏi Mới
+                        </Button>
+                    </Space>
+                }
+                variant="outlined"
+                className="rounded-xl shadow-lg"
             >
-                <Form
-                    form={form}
-                    layout="vertical"
-                    onFinish={handleSave}
-                    initialValues={{ 
-                        questionType: QuestionTypes.MULTIPLE_CHOICE,
-                        bloomLevel: BloomLevels.REMEMBER, 
-                        correctXpReward: 10,
-                        partialCredit: 0,
-                    }}
-                    className="mt-4"
-                >
-                    <Row gutter={24}>
-                        <Col span={12}>
-                            <Form.Item
-                                name="questId"
-                                label="Thuộc Quest"
-                                rules={[{ required: true, message: 'Vui lòng chọn Quest!' }]}
-                            >
-                                <Select
-                                    placeholder="Chọn một Quest"
-                                    loading={quests.length === 0 && !loading}
-                                >
-                                    {quests.map(quest => (
-                                        <Select.Option key={quest.questId} value={quest.questId}>
-                                            {quest.questName}
-                                        </Select.Option>
-                                    ))}
-                                </Select>
-                            </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                            <Form.Item
-                                name="correctXpReward"
-                                label="Phần thưởng XP"
-                                rules={[{ required: true, message: 'Vui lòng nhập XP!' }]}
-                            >
-                                <InputNumber min={1} className="w-full" placeholder="XP" />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-                    <Form.Item
-                        name="questionText"
-                        label="Nội dung Câu hỏi"
-                        rules={[{ required: true, message: 'Vui lòng nhập nội dung câu hỏi!' }]}
-                    >
-                        <MathInputPreview
-                            rows={6}
-                            placeholder="Nhập nội dung câu hỏi. Sử dụng $...$ cho công thức inline hoặc $$...$$ cho công thức riêng biệt."
-                        />
-                    </Form.Item>
+                <Spin spinning={loading} size="large">
+                    <Table
+                        columns={columns}
+                        dataSource={questions}
+                        rowKey="questionId"
+                        pagination={{ pageSize: 10 }}
+                        className="overflow-x-auto" 
+                        scroll={{ x: 'max-content' }}
+                    />
+                </Spin>
 
-                    <Row gutter={24}>
-                        <Col span={8}>
-                            <Form.Item
-                                name="bloomLevel"
-                                label="Cấp độ Bloom"
-                                rules={[{ required: true, message: 'Vui lòng chọn cấp độ!' }]}
-                            >
-                                <Select>
-                                    {Object.entries(BloomLevels).map(([key, value]) => (
-                                        <Select.Option key={key} value={value}>
-                                            {key.charAt(0) + key.slice(1).toLowerCase()}
-                                        </Select.Option>
-                                    ))}
-                                </Select>
-                            </Form.Item>
-                        </Col>
-                        <Col span={8}>
-                            <Form.Item
-                                name="questionType"
-                                label="Loại Câu hỏi"
-                                rules={[{ required: true, message: 'Vui lòng chọn loại câu hỏi!' }]}
-                            >
-                                <Select>
-                                    <Select.Option value={QuestionTypes.MULTIPLE_CHOICE}>Trắc nghiệm</Select.Option>
-                                    <Select.Option value={QuestionTypes.FILL_IN_BLANK}>Điền vào chỗ trống</Select.Option>
-                                    <Select.Option value={QuestionTypes.TRUE_FALSE}>Đúng - sai</Select.Option>
-                                    <Select.Option value={QuestionTypes.MATCHING}>Ghép cặp</Select.Option>
-                                    <Select.Option value={QuestionTypes.NUMERIC}>Điền số</Select.Option>
-                                    <Select.Option value={QuestionTypes.SEQUENCE}>Điền chuỗi số</Select.Option>
-                                    <Select.Option value={QuestionTypes.PROGRAMMING}>Lập trình</Select.Option> 
-                                    <Select.Option value={QuestionTypes.REORDER}>Sắp xếp</Select.Option>
-                                </Select>
-                            </Form.Item>
-                        </Col>
-                        {(currentQuestionType === QuestionTypes.REORDER) && (
-                            <Col span={8}>
+                <Modal
+                    title={isEditing ? `Chỉnh sửa Câu hỏi ID: ${currentQuestion?.questionId}` : 'Tạo Câu hỏi Mới'}
+                    open={isModalOpen}
+                    onCancel={() => setIsModalOpen(false)}
+                    footer={null} 
+                    width={800}
+                    destroyOnHidden={true}
+                >
+                    <Form
+                        form={form}
+                        layout="vertical"
+                        onFinish={handleSave}
+                        initialValues={{ 
+                            questionType: QuestionTypes.MULTIPLE_CHOICE,
+                            bloomLevel: BloomLevels.REMEMBER, 
+                            correctXpReward: 10,
+                            partialCredit: 0,
+                        }}
+                        className="mt-4"
+                    >
+                        <Row gutter={24}>
+                            <Col span={12}>
                                 <Form.Item
-                                    name="partialCredit"
-                                    label="Điểm thưởng một phần"
-                                    tooltip="Phần trăm XP nếu sắp xếp đúng một phần (0-100)"
-                                    rules={[{ required: true, message: 'Nhập giá trị Partial Credit!' }]}
+                                    name="questId"
+                                    label="Thuộc Quest"
+                                    rules={[{ required: true, message: 'Vui lòng chọn Quest!' }]}
                                 >
-                                    <InputNumber <number>
-                                        min={0} 
-                                        max={100} 
-                                        formatter={value => `${value}%`} 
-                                        parser={value => parseInt(value?.replace('%', '') ?? '0', 10)} 
-                                        className="w-full" 
-                                    />
+                                    <Select
+                                        placeholder="Chọn một Quest"
+                                        loading={quests.length === 0 && !loading}
+                                    >
+                                        {quests.map(quest => (
+                                            <Select.Option key={quest.questId} value={quest.questId}>
+                                                {quest.questName}
+                                            </Select.Option>
+                                        ))}
+                                    </Select>
                                 </Form.Item>
                             </Col>
-                        )}
-                    </Row>
+                            <Col span={12}>
+                                <Form.Item
+                                    name="correctXpReward"
+                                    label="Phần thưởng XP"
+                                    rules={[{ required: true, message: 'Vui lòng nhập XP!' }]}
+                                >
+                                    <InputNumber min={1} className="w-full" placeholder="XP" />
+                                </Form.Item>
+                            </Col>
+                        </Row>
+                        <Form.Item
+                            name="questionText"
+                            label="Nội dung Câu hỏi"
+                            rules={[{ required: true, message: 'Vui lòng nhập nội dung câu hỏi!' }]}
+                        >
+                            <MathInputPreview
+                                rows={6}
+                                placeholder="Nhập nội dung câu hỏi. Sử dụng $...$ cho công thức inline hoặc $$...$$ cho công thức riêng biệt."
+                            />
+                        </Form.Item>
+
+                        <Row gutter={24}>
+                            <Col span={8}>
+                                <Form.Item
+                                    name="bloomLevel"
+                                    label="Cấp độ Bloom"
+                                    rules={[{ required: true, message: 'Vui lòng chọn cấp độ!' }]}
+                                >
+                                    <Select>
+                                        {Object.entries(BloomLevels).map(([key, value]) => (
+                                            <Select.Option key={key} value={value}>
+                                                {key.charAt(0) + key.slice(1).toLowerCase()}
+                                            </Select.Option>
+                                        ))}
+                                    </Select>
+                                </Form.Item>
+                            </Col>
+                            <Col span={8}>
+                                <Form.Item
+                                    name="questionType"
+                                    label="Loại Câu hỏi"
+                                    rules={[{ required: true, message: 'Vui lòng chọn loại câu hỏi!' }]}
+                                >
+                                    <Select>
+                                        <Select.Option value={QuestionTypes.MULTIPLE_CHOICE}>Trắc nghiệm</Select.Option>
+                                        <Select.Option value={QuestionTypes.FILL_IN_BLANK}>Điền vào chỗ trống</Select.Option>
+                                        <Select.Option value={QuestionTypes.TRUE_FALSE}>Đúng - sai</Select.Option>
+                                        <Select.Option value={QuestionTypes.MATCHING}>Ghép cặp</Select.Option>
+                                        <Select.Option value={QuestionTypes.NUMERIC}>Điền số</Select.Option>
+                                        <Select.Option value={QuestionTypes.SEQUENCE}>Điền chuỗi số</Select.Option>
+                                        <Select.Option value={QuestionTypes.PROGRAMMING}>Lập trình</Select.Option> 
+                                        <Select.Option value={QuestionTypes.REORDER}>Sắp xếp</Select.Option>
+                                    </Select>
+                                </Form.Item>
+                            </Col>
+                            {(currentQuestionType === QuestionTypes.REORDER) && (
+                                <Col span={8}>
+                                    <Form.Item
+                                        name="partialCredit"
+                                        label="Điểm thưởng một phần"
+                                        tooltip="Phần trăm XP nếu sắp xếp đúng một phần (0-100)"
+                                        rules={[{ required: true, message: 'Nhập giá trị Partial Credit!' }]}
+                                    >
+                                        <InputNumber <number>
+                                            min={0} 
+                                            max={100} 
+                                            formatter={value => `${value}%`} 
+                                            parser={value => parseInt(value?.replace('%', '') ?? '0', 10)} 
+                                            className="w-full" 
+                                        />
+                                    </Form.Item>
+                                </Col>
+                            )}
+                        </Row>
+                        
+                        <DynamicAnswerFields form={form} currentQuestionType={currentQuestionType} />
+                        <Form.Item name="synonyms" hidden>
+                            <Input type="hidden" />
+                        </Form.Item>
+                        <Form.Item className="mt-6">
+                            <Space>
+                                <Button 
+                                    type="primary" 
+                                    htmlType="submit" 
+                                    loading={loading}
+                                    className="bg-blue-500 hover:bg-blue-600 rounded-lg shadow-md"
+                                >
+                                    {isEditing ? 'Cập nhật Câu hỏi' : 'Tạo Câu hỏi Mới'}
+                                </Button>
+                                <Button onClick={() => setIsModalOpen(false)}>
+                                    Hủy
+                                </Button>
+                            </Space>
+                        </Form.Item>
+                    </Form>
+                </Modal>
+            </Card>
+            <Card
+            title={
+                <h2 className="text-xl font-semibold text-gray-800">
+                    <SortAscendingOutlined className="mr-2 text-indigo-600" /> Điều Chỉnh Thứ Tự Questions theo Quest
+                </h2>
+            }
+            variant="outlined"
+            className="rounded-xl shadow-lg border-t-4 border-indigo-600 mb-8 mt-8"
+        >
+            <Spin spinning={isLoadingOrderData || isSavingQuestionOrder} style={{ width: '100%' }}>
+                <Space direction="vertical" size="middle" className="w-full">
+                    <Alert
+                        message="Hướng dẫn Sắp xếp"
+                        description="Chọn Quest (Màn chơi) để tải Câu hỏi. Kéo thả hàng trong bảng để thay đổi thứ tự. Nhấn 'Lưu Thứ Tự' để cập nhật lên Server."
+                        type="info"
+                        showIcon
+                        className='my-2'
+                    />
                     
-                    <DynamicAnswerFields form={form} currentQuestionType={currentQuestionType} />
-                    <Form.Item name="synonyms" hidden>
-                        <Input type="hidden" />
-                    </Form.Item>
-                    <Form.Item className="mt-6">
+                    <Space size="large" className="w-full justify-between items-center">
                         <Space>
-                            <Button 
-                                type="primary" 
-                                htmlType="submit" 
-                                loading={loading}
-                                className="bg-blue-500 hover:bg-blue-600 rounded-lg shadow-md"
+                            <label className="font-semibold text-gray-700">Chọn Quest:</label>
+                            <Select
+                                placeholder="Chọn Quest"
+                                style={{ width: 300 }}
+                                value={selectedQuestForOrder}
+                                onChange={setSelectedQuestForOrder}
+                                loading={quests.length === 0 && !loading}
                             >
-                                {isEditing ? 'Cập nhật Câu hỏi' : 'Tạo Câu hỏi Mới'}
-                            </Button>
-                            <Button onClick={() => setIsModalOpen(false)}>
-                                Hủy
+                                {quests.map(quest => (
+                                    <Select.Option key={quest.questId} value={quest.questId}>
+                                        {quest.questName}
+                                    </Select.Option>
+                                ))}
+                            </Select>
+                        </Space>
+                        
+                        <Space>
+                            {hasQuestionOrderChanged && (
+                                <Tooltip title="Thứ tự đã thay đổi, cần lưu lại!">
+                                    <Tag icon={<ExclamationCircleOutlined />} color="warning" className="font-bold text-lg">
+                                        CHƯA LƯU
+                                    </Tag>
+                                </Tooltip>
+                            )}
+                            <Button
+                                type="primary"
+                                icon={<SaveOutlined />}
+                                onClick={saveQuestionOrder}
+                                loading={isSavingQuestionOrder}
+                                disabled={!hasQuestionOrderChanged || questionsForOrdering.length === 0 || loading || !selectedQuestForOrder}
+                                className="bg-green-600 hover:!bg-green-700 transition duration-200"
+                            >
+                                Lưu Thứ Tự Mới
                             </Button>
                         </Space>
-                    </Form.Item>
-                </Form>
-            </Modal>
+                    </Space>
+
+                    <Table
+                        columns={questionOrderColumns}
+                        dataSource={questionsForOrdering}
+                        rowKey="questionId"
+                        loading={isLoadingOrderData || isSavingQuestionOrder}
+                        components={questionComponents}
+                        onRow={(record, index) => ({
+                            index: index!,
+                            moveRow: moveQuestionRow,
+                            className: '', 
+                            style: {}
+                        } as DraggableRowProps)}
+                        pagination={false}
+                        scroll={{ x: 'max-content' }}
+                        locale={{ emptyText: selectedQuestForOrder ? "Quest này chưa có Question nào." : "Vui lòng chọn một Quest để sắp xếp." }}
+                        className="draggable-table"
+                    />
+                </Space>
+            </Spin>
         </Card>
+        </DndProvider>
     );
 }

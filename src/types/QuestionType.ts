@@ -25,6 +25,7 @@ interface Quest {
 interface Question {
     questionId: number;
     questionText: string;
+    orderIndex?: number;
     bloomLevel: BloomLevel;
     questionType: QuestionType;
     correctXpReward: number;

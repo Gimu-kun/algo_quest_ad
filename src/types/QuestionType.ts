@@ -31,7 +31,6 @@ interface Question {
     correctXpReward: number;
     quest: Quest;
     answers: Answer[];
-    
     partialCredit?: number | null | undefined;
     synonyms?: string | null | undefined;
     codeTemplate?: string | null | undefined;

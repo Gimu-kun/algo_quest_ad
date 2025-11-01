@@ -690,15 +690,15 @@ export default function QuestionManager() {
         setLoading(true);
         try {
             const response = await axios.get<Question[]>(API_QUESTION_URL);
-            // Sắp xếp theo Quest rồi đến orderIndex
             const sortedQuestions = response.data.sort((a, b) => {
-                // Giả định Quest có trường questId trong type Question
                 if (a.quest.questId !== b.quest.questId) {
                     return a.quest.questId - b.quest.questId;
                 }
                 return (a.orderIndex || 0) - (b.orderIndex || 0); 
             });
             setQuestions(sortedQuestions);
+
+            console.log(response)
         } catch (error) {
             console.error("Error fetching questions:", error);
             message.error('Không thể tải danh sách Câu hỏi.');

@@ -11,7 +11,7 @@ export default function MainLayout() {
     const [isLoading, setIsLoading] = useState(true);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     
-    const AUTH_API_URL = 'http://localhost:8081/api/users/auth'; 
+    const AUTH_API_URL = 'http://localhost:8082/api/users/auth'; 
     const [collapsed, setCollapsed] = useState(false);
     const siderWidth = 125;
     const siderCollapsedWidth = 40;

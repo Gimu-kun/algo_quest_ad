@@ -37,7 +37,7 @@ import type { Difficulty, NestedTopic, Quest, QuestFormValues, QuestType, Topic 
 import type { OrderItem } from '../../types/OrderType';
 
 // --- Cấu hình API ---
-const API_BASE_URL = 'http://localhost:8081/api';
+const API_BASE_URL = 'http://localhost:8082/api';
 const QUEST_API_URL = `${API_BASE_URL}/quests`;
 const TOPIC_API_URL = `${API_BASE_URL}/topics`;
 const ORDER_API_URL = `${API_BASE_URL}/content/order/quests`; // API điều chỉnh thứ tự

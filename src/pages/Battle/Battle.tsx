@@ -263,7 +263,7 @@ const Battle: React.FC = () => {
                 sortBy: sortBy + ',' + sortDirection,
             };
 
-            const response = await axios.get<Page<Battle>>('http://localhost:8081/api/battles', { params });
+            const response = await axios.get<Page<Battle>>('http://localhost:8082/api/battles', { params });
 
             setBattles(response.data.content);
             setPagination(prev => ({
@@ -280,7 +280,7 @@ const Battle: React.FC = () => {
         } catch (err) {
             console.error("Lỗi khi tải dữ liệu trận đấu:", err);
             const errorMessage = (err as any)?.message || "Lỗi không xác định.";
-            setError(`Không thể tải dữ liệu trận đấu. Đảm bảo server Spring Boot đang chạy tại http://localhost:8081. Chi tiết: ${errorMessage}`);
+            setError(`Không thể tải dữ liệu trận đấu. Đảm bảo server Spring Boot đang chạy tại http://localhost:8082. Chi tiết: ${errorMessage}`);
         } finally {
             setLoading(false);
         }

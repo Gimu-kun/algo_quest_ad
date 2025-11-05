@@ -37,7 +37,7 @@ interface TopicUpdateDto {
 }
 
 
-const API_URL = 'http://localhost:8081/api/topics';
+const API_URL = 'http://localhost:8082/api/topics';
 
 export default function TopicManager() {
     const [topics, setTopics] = useState<Topic[]>([]);

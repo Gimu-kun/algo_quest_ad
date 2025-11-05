@@ -63,7 +63,7 @@ interface PaginationState {
 
 // --- COMPONENT CHÍNH ---
 
-const API_URL = "http://localhost:8081/api/user-progress/stats";
+const API_URL = "http://localhost:8082/api/user-progress/stats";
 const MAX_LEVEL = 10; // Giả định cấp độ tối đa để tạo bộ lọc
 
 const UserProgressPage: React.FC = () => {

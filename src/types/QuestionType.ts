@@ -50,6 +50,7 @@ interface QuestionFormValues {
     codeTemplate?: string; 
     testCases?: string; 
     testResults?: string; 
+    score: number;
 
     answers: { 
         text: string; 

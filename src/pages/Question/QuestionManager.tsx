@@ -67,9 +67,9 @@ const QuestionTypes = {
 
 // --- CONFIGURATION ---
 
-const API_QUESTION_URL = 'http://localhost:8081/api/questions';
-const API_QUEST_URL = 'http://localhost:8081/api/quests'; 
-const QUESTION_ORDER_API_URL = 'http://localhost:8081/api/content/order/questions';
+const API_QUESTION_URL = 'http://localhost:8082/api/questions';
+const API_QUEST_URL = 'http://localhost:8082/api/quests'; 
+const QUESTION_ORDER_API_URL = 'http://localhost:8082/api/content/order/questions';
 
 const QUESTION_DND_TYPE = 'DraggableQuestionRow';
 
@@ -791,81 +791,72 @@ export default function QuestionManager() {
     // --- CRUD HANDLERS ---
 
     const handleSave = async (values: QuestionFormValues) => {
-        console.log("values",values)
-        setLoading(true);
+        console.log("values", values);
+    setLoading(true);
 
-        let answersDto: Answer[] = [];
-        let partialCredit: number | null = null;
-        let synonyms: string | null = null;
-        let codeTemplate: string | null = null;
-        let testCases: string | null = null;
-        let testResults: string | null = null;
+    let answersDto: Answer[] = [];
+    let partialCredit: number | null = values.partialCredit || null; // Lấy partialCredit cho tất cả
+    let synonyms: string | null = null;
+    let codeTemplate: string | null = null;
+    let testCases: string | null = null;
+    let testResults: string | null = null;
 
+    // Chuyển đổi format Answers và lấy các trường phụ dựa trên QuestionType
+    switch (values.questionType) {
+        
+        // Nhóm 1: Không có đáp án trong bảng Answers
+        case QuestionTypes.PROGRAMMING:
+            codeTemplate = values.codeTemplate || null;
+            testCases = values.testCases || null;
+            testResults = values.testResults || null;
+            answersDto = []; // Luôn là mảng rỗng
+            break;
 
-        // Chuyển đổi format Answers và lấy các trường phụ dựa trên QuestionType
-        switch (values.questionType) {
-            
-            case QuestionTypes.PROGRAMMING:
-                codeTemplate = values.codeTemplate || null;
-                testCases = values.testCases || null;
-                testResults = values.testResults || null;
-                break;
-
-            case QuestionTypes.FILL_IN_BLANK:
-                synonyms = values.synonyms || null;
-            case QuestionTypes.NUMERIC:
-            case QuestionTypes.TRUE_FALSE:
-            case QuestionTypes.SEQUENCE: 
-                const mainAnswer = values.answers?.[0];
-
-                if (mainAnswer) {
-                    let answerText = mainAnswer.text;
-                    let isCorrect = mainAnswer.isCorrect;
-                    let answerMeta = mainAnswer.answerMeta || null;
-
-                    if (values.questionType === QuestionTypes.TRUE_FALSE) {
-                        answerText = isCorrect ? 'True' : 'False';
-                    } else if (values.questionType === QuestionTypes.SEQUENCE) {
-                        answerText = answerText.replace(/\s/g, ''); 
-                        isCorrect = true;
-                    }
-                    
-                    answersDto = [{
-                        answerText: answerText,
-                        correct: isCorrect,
-                        answerMeta: answerMeta
-                    }];
-                } else {
-                    // Xử lý trường hợp không có answer cho các loại này (lỗi validation)
-                    answersDto = [];
-                }
+        // Nhóm 2: Các loại có MỘT đáp án (và đó PHẢI là đáp án đúng)
+        case QuestionTypes.FILL_IN_BLANK:
+            synonyms = values.synonyms || null; // Chỉ FILL_IN_BLANK có synonyms
+            // (Tiếp tục logic bên dưới)
+        case QuestionTypes.NUMERIC:
+        case QuestionTypes.SEQUENCE:
+            const mainAnswer = values.answers?.[0];
+            if (mainAnswer) {
+                let answerText = mainAnswer.text;
                 
-                break;
+                // Xử lý riêng cho SEQUENCE (xóa khoảng trắng)
+                if (values.questionType === QuestionTypes.SEQUENCE) {
+                    answerText = answerText.replace(/\s/g, '');
+                }
 
-            case QuestionTypes.MATCHING:
-                // Ghép cặp: Lấy partialCredit và định dạng Answers
-                partialCredit = values.partialCredit || null;
-                answersDto = values.answers.map(ans => ({
-                    answerText: ans.text,
-                    correct: true,
-                    answerMeta: ans.answerMeta
-                }));
-                break;
+                answersDto = [{
+                    answerText: answerText,
+                    correct: true, // Lỗi của bạn ở đây: Luôn là TRUE cho các loại này
+                    answerMeta: mainAnswer.answerMeta || null
+                }];
+            } else {
+                answersDto = [];
+            }
+            break;
 
-            case QuestionTypes.REORDER:
-                // Sắp xếp: Lấy partialCredit
-                partialCredit = values.partialCredit || null;
-                // Vẫn dùng Answers như Multiple Choice (dùng answerMeta cho thứ tự)
-            case QuestionTypes.MULTIPLE_CHOICE:
-            default:
-                // Multiple Choice và các loại khác: Lấy Answers
-                partialCredit = values.partialCredit || null;
-                answersDto = values.answers.map(ans => ({
-                    answerText: ans.text,
-                    correct: ans.isCorrect,
-                    answerMeta: ans.answerMeta || null
-                }));
-                break;
+        // Nhóm 3: Ghép cặp (Tất cả đều là đáp án đúng)
+        case QuestionTypes.MATCHING:
+            answersDto = values.answers.map(ans => ({
+                answerText: ans.text,
+                correct: true, // Chính xác: Luôn là TRUE
+                answerMeta: ans.answerMeta
+            }));
+            break;
+
+        // Nhóm 4: Các loại có nhiều lựa chọn (Lấy isCorrect từ form)
+        case QuestionTypes.REORDER: // (Dùng answerMeta cho thứ tự)
+        case QuestionTypes.TRUE_FALSE: // (Phải có 2 lựa chọn: True/False)
+        case QuestionTypes.MULTIPLE_CHOICE:
+        default:
+            answersDto = values.answers.map(ans => ({
+                answerText: ans.text,
+                correct: ans.isCorrect, // Lấy 'isCorrect' động từ form
+                answerMeta: ans.answerMeta || null
+            }));
+            break;
         }
 
         // Payload gửi lên Backend (tương thích với QuestionCreateDto/QuestionUpdateDto)
@@ -881,6 +872,7 @@ export default function QuestionManager() {
             codeTemplate: codeTemplate,
             testCases: testCases,
             testResults: testResults,
+            score: values.score,
             // Answers
             answers: answersDto,
         };
@@ -1029,6 +1021,24 @@ export default function QuestionManager() {
             key: 'questionId',
             width: 80,
             sorter: (a, b) => a.questionId - b.questionId,
+        },{
+            title: 'Quest',
+            dataIndex: 'quest',
+            key: 'questName',
+            width: 80,
+            render: (text, record: Question) => {
+                // 'record' là đối tượng Question đầy đủ
+                // Ta truy cập vào record.quest.questId
+                const questId = record.quest?.questName; // Sử dụng optional chaining để an toàn hơn
+                
+                return (
+                    <Tag color="purple">
+                        {questId ?? 'N/A'} 
+                        {/* Nếu questId là undefined, hiển thị 'N/A' */}
+                    </Tag>
+                );
+            },
+            sorter: (a, b) => a.quest.questId - b.quest.questId,
         },
         {
             title: "Thứ tự (DB)",
@@ -1251,6 +1261,20 @@ export default function QuestionManager() {
                                             </Select.Option>
                                         ))}
                                     </Select>
+                                </Form.Item>
+                                <Form.Item
+                                    name="score" // <<< Thêm trường này
+                                    label={<> <FireOutlined className="text-red-500" /> Điểm (XP)</>}
+                                    tooltip="Điểm kinh nghiệm (XP) người chơi nhận được khi trả lời đúng câu hỏi này."
+                                    rules={[{ required: true, message: 'Vui lòng nhập điểm số!' }]}
+                                >
+                                    <InputNumber
+                                        min={1} 
+                                        max={1000} // Giả sử điểm tối đa là 1000
+                                        step={1}
+                                        className="w-full"
+                                        placeholder="Ví dụ: 100"
+                                    />
                                 </Form.Item>
                             </Col>
                             <Col span={8}>

@@ -25,7 +25,7 @@ const Auth = () => {
 
     try {
       const response = await axios.post<LoginResponse>(
-        'http://localhost:8081/api/users/login',
+        'http://localhost:8082/api/users/login',
         payload
       );
 

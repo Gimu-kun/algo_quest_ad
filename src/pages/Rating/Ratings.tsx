@@ -102,7 +102,7 @@ const Ratings: React.FC = () => {
                 sort: `${sortBy},${sortDirection}`,
             };
 
-            const response = await axios.get<Page<UserRating>>('http://localhost:8081/api/ratings', { params });
+            const response = await axios.get<Page<UserRating>>('http://localhost:8082/api/ratings', { params });
 
             setUserRatings(response.data.content);
             setPagination(prev => ({
@@ -118,7 +118,7 @@ const Ratings: React.FC = () => {
         } catch (err) {
             console.error("Lỗi khi tải dữ liệu Rating:", err);
             const errorMessage = (err as any)?.message || "Lỗi không xác định.";
-            setError(`Không thể tải dữ liệu xếp hạng. Đảm bảo server Spring Boot đang chạy tại http://localhost:8081. Chi tiết: ${errorMessage}`);
+            setError(`Không thể tải dữ liệu xếp hạng. Đảm bảo server Spring Boot đang chạy tại http://localhost:8082. Chi tiết: ${errorMessage}`);
         } finally {
             setLoading(false);
         }
